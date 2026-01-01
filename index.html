@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>HK News & Vocab</title>
+    <style>
+        :root {
+            --primary-color: #007bff;
+            --bg-color: #f4f4f9;
+            --card-bg: #ffffff;
+            --text-color: #333;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 0;
+            padding-bottom: 80px; /* Space for bottom content */
+        }
+
+        header {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 15px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        h1 { margin: 0; font-size: 1.2rem; }
+        h2 { font-size: 1rem; margin-bottom: 10px; border-left: 4px solid var(--primary-color); padding-left: 8px; }
+
+        .container { padding: 15px; max-width: 600px; margin: 0 auto; }
+
+        /* News Section */
+        .news-item {
+            background: var(--card-bg);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            transition: transform 0.2s;
+        }
+        .news-item:active { transform: scale(0.98); }
+        .news-title { font-weight: bold; font-size: 1rem; display: block; text-decoration: none; color: #333; margin-bottom: 5px; }
+        .news-date { font-size: 0.8rem; color: #888; }
+        
+        /* Vocab Section */
+        .vocab-input-area {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            box-sizing: border-box; /* Fix padding issue */
+            font-size: 1rem;
+        }
+
+        button#saveBtn {
+            width: 100%;
+            padding: 12px;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 1rem;
+            font-weight: bold;
+        }
+
+        .vocab-list { list-style: none; padding: 0; }
+        .vocab-item {
+            background: var(--card-bg);
+            border-bottom: 1px solid #eee;
+            padding: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .vocab-word { font-weight: bold; color: var(--primary-color); font-size: 1.1rem; }
+        .vocab-meaning { color: #555; }
+        .delete-btn {
+            background: #ff4d4d;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 0.8rem;
+            margin-left: 10px;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            justify-content: space-around;
+            background: white;
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+            border-top: 1px solid #ddd;
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+        .tab-btn {
+            flex: 1;
+            padding: 15px;
+            border: none;
+            background: none;
+            font-size: 1rem;
+            color: #888;
+        }
+        .tab-btn.active { color: var(--primary-color); font-weight: bold; border-top: 2px solid var(--primary-color); }
+        
+        .section { display: none; }
+        .section.active { display: block; }
+
+        #loading { text-align: center; color: #888; margin-top: 20px; }
+
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Daily English HK</h1>
+</header>
+
+<div class="container">
+    <div id="news-section" class="section active">
+        <h2>Latest News (HK English)</h2>
+        <div id="loading">Loading news...</div>
+        <div id="news-container"></div>
+    </div>
+
+    <div id="vocab-section" class="section">
+        <h2>Add New Word</h2>
+        <div class="vocab-input-area">
+            <input type="text" id="wordInput" placeholder="English Word (e.g., Inflation)">
+            <input type="text" id="meaningInput" placeholder="中文解釋 (e.g., 通脹)">
+            <button id="saveBtn">Save Record</button>
+        </div>
+
+        <h2>My Vocabulary List</h2>
+        <ul id="vocab-list" class="vocab-list"></ul>
+    </div>
+</div>
+
+<div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('news')">News</button>
+    <button class="tab-btn" onclick="switchTab('vocab')">Vocabulary</button>
+</div>
+
+<script>
+    // 1. NEWS FETCHING LOGIC
+    // Note: Since Google News RSS doesn't allow direct browser access (CORS), 
+    // we use a public proxy (rss2json) to fetch the data safely.
+    const RSS_URL = "https://news.google.com/rss/search?q=Hong+Kong+English&hl=en-HK&gl=HK&ceid=HK:en";
+    const API_URL = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(RSS_URL)}`;
+
+    async function fetchNews() {
+        try {
+            const response = await fetch(API_URL);
+            const data = await response.json();
+            const container = document.getElementById('news-container');
+            document.getElementById('loading').style.display = 'none';
+
+            if(data.status === 'ok') {
+                data.items.forEach(item => {
+                    const div = document.createElement('div');
+                    div.className = 'news-item';
+                    // Extract simpler date
+                    const date = new Date(item.pubDate).toLocaleDateString('en-HK', { month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit'});
+                    
+                    div.innerHTML = `
+                        <a href="${item.link}" target="_blank" class="news-title">${item.title}</a>
+                        <div class="news-date">${date}</div>
+                    `;
+                    container.appendChild(div);
+                });
+            } else {
+                container.innerHTML = "<p>Failed to load news via proxy.</p>";
+            }
+        } catch (e) {
+            document.getElementById('loading').innerHTML = "Error loading news. Please check internet.";
+        }
+    }
+
+    // 2. VOCABULARY LOGIC (LocalStorage)
+    function loadVocab() {
+        const list = document.getElementById('vocab-list');
+        list.innerHTML = '';
+        const savedData = JSON.parse(localStorage.getItem('myVocabHK')) || [];
+
+        savedData.forEach((item, index) => {
+            const li = document.createElement('li');
+            li.className = 'vocab-item';
+            li.innerHTML = `
+                <div>
+                    <div class="vocab-word">${item.word}</div>
+                    <div class="vocab-meaning">${item.meaning}</div>
+                </div>
+                <button class="delete-btn" onclick="deleteVocab(${index})">✕</button>
+            `;
+            list.appendChild(li);
+        });
+    }
+
+    document.getElementById('saveBtn').addEventListener('click', () => {
+        const word = document.getElementById('wordInput').value.trim();
+        const meaning = document.getElementById('meaningInput').value.trim();
+
+        if(word && meaning) {
+            const savedData = JSON.parse(localStorage.getItem('myVocabHK')) || [];
+            // Add new word to the top
+            savedData.unshift({ word, meaning, date: new Date().toISOString() });
+            localStorage.setItem('myVocabHK', JSON.stringify(savedData));
+            
+            // Clear inputs and reload
+            document.getElementById('wordInput').value = '';
+            document.getElementById('meaningInput').value = '';
+            loadVocab();
+        } else {
+            alert("Please fill in both fields!");
+        }
+    });
+
+    function deleteVocab(index) {
+        if(confirm("Delete this word?")) {
+            const savedData = JSON.parse(localStorage.getItem('myVocabHK')) || [];
+            savedData.splice(index, 1);
+            localStorage.setItem('myVocabHK', JSON.stringify(savedData));
+            loadVocab();
+        }
+    }
+
+    // 3. TAB SWITCHING
+    function switchTab(tabName) {
+        // Hide all sections
+        document.querySelectorAll('.section').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+
+        // Show selected
+        document.getElementById(tabName + '-section').classList.add('active');
+        // Update buttons (simple logic)
+        const btnIndex = tabName === 'news' ? 0 : 1;
+        document.querySelectorAll('.tab-btn')[btnIndex].classList.add('active');
+    }
+
+    // Initialize
+    fetchNews();
+    loadVocab();
+
+</script>
+
+</body>
+</html>
